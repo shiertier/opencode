@@ -50,6 +50,7 @@ export namespace SessionProcessor {
           try {
             let currentText: MessageV2.TextPart | undefined
             let reasoningMap: Record<string, MessageV2.ReasoningPart> = {}
+            let sawToolCall = false
             const stream = await LLM.stream(streamInput)
 
             for await (const value of stream.fullStream) {
@@ -124,6 +125,7 @@ export namespace SessionProcessor {
                   break
 
                 case "tool-call": {
+                  sawToolCall = true
                   const match = toolcalls[value.toolCallId]
                   if (match) {
                     const part = await Session.updatePart({
@@ -239,12 +241,13 @@ export namespace SessionProcessor {
                     usage: value.usage,
                     metadata: value.providerMetadata,
                   })
-                  input.assistantMessage.finish = value.finishReason
+                  const finishReason = sawToolCall ? "tool-calls" : value.finishReason
+                  input.assistantMessage.finish = finishReason
                   input.assistantMessage.cost += usage.cost
                   input.assistantMessage.tokens = usage.tokens
                   await Session.updatePart({
                     id: Identifier.ascending("part"),
-                    reason: value.finishReason,
+                    reason: finishReason,
                     snapshot: await Snapshot.track(),
                     messageID: input.assistantMessage.id,
                     sessionID: input.assistantMessage.sessionID,
